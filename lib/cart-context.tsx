@@ -1,9 +1,10 @@
 'use client';
+
 import * as React from 'react';
 import { createContext, useContext } from 'react';
-import type { Cart } from './shopify/types';
-import * as cartMutations from './shopify/mutations/cart';
-import { getCart } from './shopify/mutations/cart';
+import type { Cart } from '@/lib/shopify/types';
+import * as cartMutations from '@/lib/shopify/mutations/cart';
+import { getCart } from '@/lib/shopify/mutations/cart';
 import { deleteCookie, getCookie, setCookie } from 'cookies-next';
 
 interface CartContextValue {
@@ -18,27 +19,19 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-export function useCart() {
-  const ctx = useContext(CartContext);
-  if (!ctx) throw new Error('useCart must be used within CartProvider');
-  return ctx;
-}
-
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = React.useState<Cart | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
-  async function loadCart() {
-    const cartId = getCookie('cartId') as string | undefined;
-    if (!cartId) return;
-    try {
-      const c = await getCart(cartId);
-      if (c) setCart(c);
-      else { deleteCookie('cartId'); setCart(null); }
-    } catch { deleteCookie('cartId'); setCart(null); }
-  }
+  const cartId = getCookie('cartId') as string | undefined;
 
-  React.useEffect(() => { loadCart(); }, []);
+  React.useEffect(() => {
+    if (cartId) {
+      getCart(cartId)
+        .then((c) => { if (c) setCart(c); else { deleteCookie('cartId'); setCart(null); } })
+        .catch(() => { deleteCookie('cartId'); setCart(null); });
+    }
+  }, [cartId]);
 
   async function addItem(merchandiseId: string, quantity = 1) {
     setIsLoading(true);
@@ -51,7 +44,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCookie('cartId', updatedCart.id, { maxAge: 60 * 60 * 24 * 30 });
       }
       setCart(updatedCart);
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function updateItem(lineId: string, quantity: number) {
@@ -60,7 +55,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedCart = await cartMutations.updateCart(cart.id, [{ id: lineId, quantity }]);
       setCart(updatedCart);
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function removeItem(lineId: string) {
@@ -69,7 +66,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedCart = await cartMutations.removeFromCart(cart.id, [lineId]);
       setCart(updatedCart);
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function applyDiscount(code: string) {
@@ -78,14 +77,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedCart = await cartMutations.applyDiscountCode(cart.id, code);
       setCart(updatedCart);
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  async function refreshCart() { await loadCart(); }
+  async function refreshCart() {
+    if (!cartId) return;
+    const c = await getCart(cartId);
+    setCart(c);
+  }
 
   return (
     <CartContext.Provider value={{ cart, isLoading, addItem, updateItem, removeItem, applyDiscount, refreshCart }}>
       {children}
     </CartContext.Provider>
   );
+}
+
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error('useCart must be used within CartProvider');
+  return ctx;
 }
